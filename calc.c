@@ -2,6 +2,9 @@
 // https://github.com/mrgiray/C-Calc-lab6
 // Compile with: gcc -O2 -Wall -Wextra -std=c17 -o calc calc.c -lm
 // Resources used:ChatGPT, W3Schools, GeekForGeeks, PDF's and friends.
+/* we use this functuon to skip spaces and tabs when we read the expression.
+   It moves character by character until there is a real number, operator or another character we care about.
+   */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,12 +16,7 @@
 #define STUDENT_LASTNAME "oztekin"
 #define STUDENT_ID "251ADB223"
 
-/*
- * AI (ChatGPT): helped adapt my earlier argc/argv, file I/O,
- * and calculator lab code into the first Grade 4 version.
- */
 
-/* Skip spaces and tabs between numbers and operators. */
 void skip_spaces(const char **p)
 {
     while (**p == ' ' || **p == '\t') {
@@ -26,51 +24,110 @@ void skip_spaces(const char **p)
     }
 }
 
-/* Grade 4 parser: integers with only + and -. */
-long long evaluate_line(const char *line)
+int parse_number(const char **p, const char *line,
+                 long long *value, size_t *error_offset)
+{
+    skip_spaces(p);
+
+    if (!isdigit((unsigned char)**p)) {
+        *error_offset = (size_t)(*p - line);
+        return -1;
+    }
+
+    long long number = 0;
+
+    while (isdigit((unsigned char)**p)) {
+        number = number * 10 + (**p - '0');
+        (*p)++;
+    }
+
+    *value = number;
+    return 0;
+}
+
+int parse_term(const char **p, const char *line,
+               long long *value, size_t *error_offset)
+{
+    if (parse_number(p, line, value, error_offset) != 0) {
+        return -1;
+    }
+
+    while (1) {
+        skip_spaces(p);
+
+        if (**p != '*' && **p != '/') {
+            return 0;
+        }
+
+        char op = **p;
+        (*p)++;
+
+        skip_spaces(p);
+
+        size_t right_operand = (size_t)(*p - line);
+
+        long long number;
+
+        if (parse_number(p, line, &number, error_offset) != 0) {
+            return -1;
+        }
+
+        if (op == '/' && number == 0) {
+            *error_offset = right_operand;
+            return -1;
+        }
+
+        if (op == '*') {
+            *value *= number;
+        }
+        else {
+            *value /= number;
+        }
+    }
+}
+
+
+int evaluate_line(const char *line, long long *answer, size_t *error_offset)
 {
     const char *p = line;
 
-    skip_spaces(&p);
+    long long result;
 
-    long long result = 0;
-
-    while (isdigit((unsigned char)*p)) {
-        result = result * 10 + (*p - '0');
-        p++;
+    if (parse_term(&p, line, &result, error_offset) != 0) {
+        return -1;
     }
 
     while (1) {
         skip_spaces(&p);
 
         if (*p == '\n' || *p == '\0') {
-            break;
+            *answer = result;
+            return 0;
+        }
+
+        if (*p != '+' && *p != '-') {
+            *error_offset = (size_t)(p - line);
+            return -1;
         }
 
         char op = *p;
         p++;
 
-        skip_spaces(&p);
+        long long number;
 
-        long long number = 0;
-
-        while (isdigit((unsigned char)*p)) {
-            number = number * 10 + (*p - '0');
-            p++;
+        if (parse_term(&p, line, &number, error_offset) != 0) {
+            return -1;
         }
 
         if (op == '+') {
             result += number;
         }
-        else if (op == '-') {
+        else {
             result -= number;
         }
     }
-
-    return result;
 }
 
-/* Get filename without path and without .txt. */
 void get_input_base(const char *path, char *base, size_t size)
 {
     const char *name = strrchr(path, '/');
@@ -108,10 +165,6 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    /*
-     * mkdir creates the output folder.
-     * If it already exists, continuing is fine for this assignment.
-     */
     mkdir(outdir, 0777);
 
     char base[256];
@@ -138,10 +191,37 @@ int main(int argc, char *argv[])
 
     char line[4096];
 
+    long long file_position = 1;
+long long error_position = 0;
+int has_error = 0;
+
+while (fgets(line, sizeof(line), input) != NULL) {
+    long long result;
+    size_t error_offset;
+
+    if (evaluate_line(line, &result, &error_offset) != 0) {
+        error_position = file_position + (long long)error_offset;
+        has_error = 1;
+        break;
+    }
+
+    file_position += (long long)strlen(line);
+}
+
+if (has_error) {
+    fprintf(output, "ERROR:%lld\n", error_position);
+}
+else {
+    rewind(input);
+
     while (fgets(line, sizeof(line), input) != NULL) {
-        long long result = evaluate_line(line);
+        long long result;
+        size_t error_offset;
+
+        evaluate_line(line, &result, &error_offset);
         fprintf(output, "%lld\n", result);
     }
+}
 
     fclose(input);
     fclose(output);
