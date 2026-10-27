@@ -9,11 +9,26 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <math.h> 
 
 #define STUDENT_NAME "artun"
 #define STUDENT_LASTNAME "oztekin"
 #define STUDENT_ID "251ADB223"
 
+typedef struct {
+    int is_float;
+    long long integer;
+    double floating;
+} Value;
+
+double value_as_double(Value value)
+{
+    if (value.is_float) {
+        return value.floating;
+    }
+
+    return (double)value.integer;
+}
 
 void skip_spaces(const char **p)
 {
@@ -22,13 +37,12 @@ void skip_spaces(const char **p)
     }
 }
 
-
 int parse_expression(const char **p, const char *line,
-                     long long *value, size_t *error_offset);
+                     Value *value, size_t *error_offset);
 
 
 int parse_number(const char **p, const char *line,
-                 long long *value, size_t *error_offset)
+                 Value *value, size_t *error_offset)
 {
     skip_spaces(p);
 
@@ -37,20 +51,47 @@ int parse_number(const char **p, const char *line,
         return -1;
     }
 
-    long long number = 0;
+    long long integer = 0;
 
     while (isdigit((unsigned char)**p)) {
-        number = number * 10 + (**p - '0');
+        integer = integer * 10 + (**p - '0');
         (*p)++;
     }
 
-    *value = number;
+    if (**p == '.') {
+        const char *dot = *p;
+        (*p)++;
+
+        if (!isdigit((unsigned char)**p)) {
+            *error_offset = (size_t)(dot - line);
+            return -1;
+        }
+
+        double floating = (double)integer;
+        double place = 0.1;
+
+        while (isdigit((unsigned char)**p)) {
+            floating += (**p - '0') * place;
+            place *= 0.1;
+            (*p)++;
+        }
+
+        value->is_float = 1;
+        value->floating = floating;
+        value->integer = 0;
+    }
+    else {
+        value->is_float = 0;
+        value->integer = integer;
+        value->floating = 0.0;
+    }
+
     return 0;
 }
 
 
 int parse_primary(const char **p, const char *line,
-                  long long *value, size_t *error_offset)
+                  Value *value, size_t *error_offset)
 {
     skip_spaces(p);
 
@@ -95,7 +136,7 @@ long long integer_power(long long base, long long exponent)
 
 
 int parse_power(const char **p, const char *line,
-                long long *value, size_t *error_offset)
+                Value *value, size_t *error_offset)
 {
     if (parse_primary(p, line, value, error_offset) != 0) {
         return -1;
@@ -104,24 +145,42 @@ int parse_power(const char **p, const char *line,
     skip_spaces(p);
 
     if (**p == '*' && *(*p + 1) == '*') {
-        (*p) += 2;
+        size_t operator_position = (size_t)(*p - line);
 
+        (*p) += 2;
         skip_spaces(p);
 
         size_t exponent_start = (size_t)(*p - line);
 
-        long long exponent;
+        Value exponent;
 
         if (parse_power(p, line, &exponent, error_offset) != 0) {
             return -1;
         }
 
-        if (exponent < 0) {
+        if (!exponent.is_float && exponent.integer < 0) {
             *error_offset = exponent_start;
             return -1;
         }
 
-        *value = integer_power(*value, exponent);
+        if (!value->is_float && !exponent.is_float) {
+            value->integer =
+                integer_power(value->integer, exponent.integer);
+        }
+        else {
+            double result =
+                pow(value_as_double(*value),
+                    value_as_double(exponent));
+
+            if (!isfinite(result)) {
+                *error_offset = operator_position;
+                return -1;
+            }
+
+            value->is_float = 1;
+            value->floating = result;
+            value->integer = 0;
+        }
     }
 
     return 0;
@@ -129,7 +188,7 @@ int parse_power(const char **p, const char *line,
 
 
 int parse_term(const char **p, const char *line,
-               long long *value, size_t *error_offset)
+               Value *value, size_t *error_offset)
 {
     if (parse_power(p, line, value, error_offset) != 0) {
         return -1;
@@ -142,6 +201,8 @@ int parse_term(const char **p, const char *line,
             return 0;
         }
 
+        size_t operator_position = (size_t)(*p - line);
+
         char op = **p;
         (*p)++;
 
@@ -149,31 +210,59 @@ int parse_term(const char **p, const char *line,
 
         size_t right_operand = (size_t)(*p - line);
 
-        long long number;
+        Value number;
 
         if (parse_power(p, line, &number, error_offset) != 0) {
             return -1;
         }
 
-        if (op == '/' && number == 0) {
+        int zero = number.is_float
+                   ? number.floating == 0.0
+                   : number.integer == 0;
+
+        if (op == '/' && zero) {
             *error_offset = right_operand;
             return -1;
         }
 
-        if (op == '*') {
-            *value *= number;
+        if (value->is_float || number.is_float) {
+            double left = value_as_double(*value);
+            double right = value_as_double(number);
+
+            double result;
+
+            if (op == '*') {
+                result = left * right;
+            }
+            else {
+                result = left / right;
+            }
+
+            if (!isfinite(result)) {
+                *error_offset = operator_position;
+                return -1;
+            }
+
+            value->is_float = 1;
+            value->floating = result;
+            value->integer = 0;
         }
         else {
-            *value /= number;
+            if (op == '*') {
+                value->integer *= number.integer;
+            }
+            else {
+                value->integer /= number.integer;
+            }
         }
     }
 }
 
 
 int parse_expression(const char **p, const char *line,
-                     long long *value, size_t *error_offset)
+                     Value *value, size_t *error_offset)
 {
-    long long result;
+    Value result;
 
     if (parse_term(p, line, &result, error_offset) != 0) {
         return -1;
@@ -192,26 +281,52 @@ int parse_expression(const char **p, const char *line,
             return -1;
         }
 
+        size_t operator_position = (size_t)(*p - line);
+
         char op = **p;
         (*p)++;
 
-        long long number;
+        Value number;
 
         if (parse_term(p, line, &number, error_offset) != 0) {
             return -1;
         }
 
-        if (op == '+') {
-            result += number;
+        if (result.is_float || number.is_float) {
+            double left = value_as_double(result);
+            double right = value_as_double(number);
+
+            double calculated;
+
+            if (op == '+') {
+                calculated = left + right;
+            }
+            else {
+                calculated = left - right;
+            }
+
+            if (!isfinite(calculated)) {
+                *error_offset = operator_position;
+                return -1;
+            }
+
+            result.is_float = 1;
+            result.floating = calculated;
+            result.integer = 0;
         }
         else {
-            result -= number;
+            if (op == '+') {
+                result.integer += number.integer;
+            }
+            else {
+                result.integer -= number.integer;
+            }
         }
     }
 }
 
 
-int evaluate_line(const char *line, long long *answer,
+int evaluate_line(const char *line, Value *answer,
                   size_t *error_offset)
 {
     const char *p = line;
@@ -229,7 +344,6 @@ int evaluate_line(const char *line, long long *answer,
 
     return 0;
 }
-
 
 void get_input_base(const char *path, char *base, size_t size)
 {
@@ -314,7 +428,7 @@ int process_file(const char *input_path, const char *outdir)
     int has_error = 0;
 
     while (fgets(line, sizeof(line), input) != NULL) {
-        long long result;
+        Value result;
         size_t error_offset;
 
         if (!line_is_ignored(line)) {
@@ -337,7 +451,7 @@ int process_file(const char *input_path, const char *outdir)
         rewind(input);
 
         while (fgets(line, sizeof(line), input) != NULL) {
-            long long result;
+            Value result;
             size_t error_offset;
 
             if (line_is_ignored(line)) {
@@ -345,7 +459,12 @@ int process_file(const char *input_path, const char *outdir)
             }
 
             evaluate_line(line, &result, &error_offset);
-            fprintf(output, "%lld\n", result);
+            if (result.is_float) {
+                fprintf(output, "%.15g\n", result.floating);
+            }
+            else {
+                fprintf(output, "%lld\n", result.integer);
+            }
         }
     }
 
