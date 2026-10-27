@@ -23,6 +23,8 @@ void skip_spaces(const char **p)
         (*p)++;
     }
 }
+int parse_expression(const char **p, const char *line,
+                     long long *value, size_t *error_offset);
 
 int parse_number(const char **p, const char *line,
                  long long *value, size_t *error_offset)
@@ -45,11 +47,87 @@ int parse_number(const char **p, const char *line,
     return 0;
 }
 
+int parse_primary(const char **p, const char *line,
+                  long long *value, size_t *error_offset)
+{
+    skip_spaces(p);
+
+    if (isdigit((unsigned char)**p)) {
+        return parse_number(p, line, value, error_offset);
+    }
+
+    if (**p == '(') {
+        (*p)++;
+
+        if (parse_expression(p, line, value, error_offset) != 0) {
+            return -1;
+        }
+
+        skip_spaces(p);
+
+        if (**p != ')') {
+            *error_offset = (size_t)(*p - line);
+            return -1;
+        }
+
+        (*p)++;
+        return 0;
+    }
+
+    *error_offset = (size_t)(*p - line);
+    return -1;
+}
+
+long long integer_power(long long base, long long exponent)
+{
+    long long result = 1;
+
+    while (exponent > 0) {
+        result *= base;
+        exponent--;
+    }
+
+    return result;
+}
+
+int parse_power(const char **p, const char *line,
+                long long *value, size_t *error_offset)
+{
+    if (parse_primary(p, line, value, error_offset) != 0) {
+        return -1;
+    }
+
+    skip_spaces(p);
+
+    if (**p == '*' && *(*p + 1) == '*') {
+        (*p) += 2;
+
+        skip_spaces(p);
+
+        size_t exponent_start = (size_t)(*p - line);
+
+        long long exponent;
+
+        if (parse_power(p, line, &exponent, error_offset) != 0) {
+            return -1;
+        }
+
+        if (exponent < 0) {
+            *error_offset = exponent_start;
+            return -1;
+        }
+
+        *value = integer_power(*value, exponent);
+    }
+
+    return 0;
+}
+
 int parse_term(const char **p, const char *line,
                long long *value, size_t *error_offset)
 {
-    if (parse_number(p, line, value, error_offset) != 0) {
-        return -1;
+    if (parse_power(p, line, value, error_offset) != 0) {
+    return -1;
     }
 
     while (1) {
@@ -68,9 +146,9 @@ int parse_term(const char **p, const char *line,
 
         long long number;
 
-        if (parse_number(p, line, &number, error_offset) != 0) {
-            return -1;
-        }
+        if (parse_power(p, line, &number, error_offset) != 0) {
+        return -1;
+        } 
 
         if (op == '/' && number == 0) {
             *error_offset = right_operand;
@@ -87,35 +165,34 @@ int parse_term(const char **p, const char *line,
 }
 
 
-int evaluate_line(const char *line, long long *answer, size_t *error_offset)
+int parse_expression(const char **p, const char *line,
+                     long long *value, size_t *error_offset)
 {
-    const char *p = line;
-
     long long result;
 
-    if (parse_term(&p, line, &result, error_offset) != 0) {
+    if (parse_term(p, line, &result, error_offset) != 0) {
         return -1;
     }
 
     while (1) {
-        skip_spaces(&p);
+        skip_spaces(p);
 
-        if (*p == '\n' || *p == '\0') {
-            *answer = result;
+        if (**p == ')' || **p == '\n' || **p == '\0') {
+            *value = result;
             return 0;
         }
 
-        if (*p != '+' && *p != '-') {
-            *error_offset = (size_t)(p - line);
+        if (**p != '+' && **p != '-') {
+            *error_offset = (size_t)(*p - line);
             return -1;
         }
 
-        char op = *p;
-        p++;
+        char op = **p;
+        (*p)++;
 
         long long number;
 
-        if (parse_term(&p, line, &number, error_offset) != 0) {
+        if (parse_term(p, line, &number, error_offset) != 0) {
             return -1;
         }
 
@@ -126,6 +203,24 @@ int evaluate_line(const char *line, long long *answer, size_t *error_offset)
             result -= number;
         }
     }
+}
+
+int evaluate_line(const char *line, long long *answer, size_t *error_offset)
+{
+    const char *p = line;
+
+    if (parse_expression(&p, line, answer, error_offset) != 0) {
+        return -1;
+    }
+
+    skip_spaces(&p);
+
+    if (*p != '\n' && *p != '\0') {
+        *error_offset = (size_t)(p - line);
+        return -1;
+    }
+
+    return 0;
 }
 
 void get_input_base(const char *path, char *base, size_t size)
@@ -146,6 +241,19 @@ void get_input_base(const char *path, char *base, size_t size)
     if (dot != NULL && strcmp(dot, ".txt") == 0) {
         *dot = '\0';
     }
+}
+
+int line_is_ignored(const char *line)
+{
+    const char *p = line;
+
+    skip_spaces(&p);
+
+    if (*p == '\n' || *p == '\0' || *p == '#') {
+        return 1;
+    }
+
+    return 0;
 }
 
 int main(int argc, char *argv[])
@@ -199,10 +307,12 @@ while (fgets(line, sizeof(line), input) != NULL) {
     long long result;
     size_t error_offset;
 
-    if (evaluate_line(line, &result, &error_offset) != 0) {
-        error_position = file_position + (long long)error_offset;
-        has_error = 1;
-        break;
+    if (!line_is_ignored(line)) {
+        if (evaluate_line(line, &result, &error_offset) != 0) {
+            error_position = file_position + (long long)error_offset;
+            has_error = 1;
+            break;
+        }
     }
 
     file_position += (long long)strlen(line);
@@ -215,11 +325,15 @@ else {
     rewind(input);
 
     while (fgets(line, sizeof(line), input) != NULL) {
-        long long result;
-        size_t error_offset;
+    long long result;
+    size_t error_offset;
 
-        evaluate_line(line, &result, &error_offset);
-        fprintf(output, "%lld\n", result);
+    if (line_is_ignored(line)) {
+        continue;
+    }
+
+    evaluate_line(line, &result, &error_offset);
+    fprintf(output, "%lld\n", result);
     }
 }
 
