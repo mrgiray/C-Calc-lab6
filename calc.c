@@ -1,7 +1,12 @@
 // Artun Giray OZTEKIN 251ADB223
 // https://github.com/mrgiray/C-Calc-lab6
 // Compile with: gcc -O2 -Wall -Wextra -std=c17 -o calc calc.c -lm
-// Resources used: ChatGPT, W3Schools, GeeksforGeeks, PDFs and friends.
+// Resources used: ChatGPT: used it to fix(debug) and learn things i didnt understand from W3 or GFG websites and used it to fix-up my explanations for the functions.
+//                  GPT chat link: https://chatgpt.com/share/6ae0cc0d-1a60-83ed-abae-1bbc626e76b1
+//                  W3Schools: used to learn, remember and check what i know.
+//                  GeeksforGeeks: same thing, learn, remember and checking out things
+//                  RTU course materials
+//                  Friends (ofc we helped each other, lol)                 
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,12 +20,14 @@
 #define STUDENT_LASTNAME "oztekin"
 #define STUDENT_ID "251ADB223"
 
+/* Stores either an integer or a floating point number. */
 typedef struct {
     int is_float;
     long long integer;
     double floating;
 } Value;
 
+/* Converts a value into a double when a floating point calculation is required. */
 double value_as_double(Value value)
 {
     if (value.is_float) {
@@ -30,6 +37,7 @@ double value_as_double(Value value)
     return (double)value.integer;
 }
 
+/* Skips spaces and tabs while reading the expression. */
 void skip_spaces(const char **p)
 {
     while (**p == ' ' || **p == '\t') {
@@ -37,12 +45,15 @@ void skip_spaces(const char **p)
     }
 }
 
+/* Declares parse_expression early so it can be used by the other parser functions. */
 int parse_expression(const char **p, const char *line,
                      Value *value, size_t *error_offset);
 
-
-int parse_number(const char **p, const char *line,
-                 Value *value, size_t *error_offset)
+/* Reads a number from the expression.
+   It reads the digits first, then checks if there is a decimal point.
+   And if there is one, it reads the decimal part and saves the number part as a float.
+   If not, it keeps it as an integer. */
+int parse_number(const char **p, const char *line, Value *value, size_t *error_offset)
 {
     skip_spaces(p);
 
@@ -89,9 +100,11 @@ int parse_number(const char **p, const char *line,
     return 0;
 }
 
-
-int parse_primary(const char **p, const char *line,
-                  Value *value, size_t *error_offset)
+/* Reads the basic parts of an expression.
+   It can read a normal number or something thats inside a parentheses.
+   Then if it finds parentheses, it reads the expression inside them first. */
+// Used ChatGPT for a recursion example and help connecting parentheses to the parser.
+int parse_primary(const char **p, const char *line, Value *value, size_t *error_offset)
 {
     skip_spaces(p);
 
@@ -121,7 +134,7 @@ int parse_primary(const char **p, const char *line,
     return -1;
 }
 
-
+/* Calculates integer powers by multiplying the base by itself. */
 long long integer_power(long long base, long long exponent)
 {
     long long result = 1;
@@ -134,9 +147,10 @@ long long integer_power(long long base, long long exponent)
     return result;
 }
 
-
-int parse_power(const char **p, const char *line,
-                Value *value, size_t *error_offset)
+/* Handles the exponent(**) operator.
+   It reads the value on the right side first, so powers are done correctly.
+   It also uses different calculations for integer and floating point values. */
+int parse_power(const char **p, const char *line, Value *value, size_t *error_offset)
 {
     if (parse_primary(p, line, value, error_offset) != 0) {
         return -1;
@@ -186,9 +200,11 @@ int parse_power(const char **p, const char *line,
     return 0;
 }
 
-
-int parse_term(const char **p, const char *line,
-               Value *value, size_t *error_offset)
+/* Handles multiplication and division.
+   It gets the numbers from parse_power first so powers are finished before multiplication(*) and division(/).
+   It also checks for division by zero and keeps normal integer division when needed. */
+// Used ChatGPT to understand the parser order and operator precedence.
+int parse_term(const char **p, const char *line, Value *value, size_t *error_offset)
 {
     if (parse_power(p, line, value, error_offset) != 0) {
         return -1;
@@ -258,9 +274,11 @@ int parse_term(const char **p, const char *line,
     }
 }
 
-
-int parse_expression(const char **p, const char *line,
-                     Value *value, size_t *error_offset)
+/* Handles addition and subtraction.
+   It gets the values from parse_term first, so multiplication and division
+   are already done before + and - are calculated. */
+// Used ChatGPT to understand how parsing should stop at a closing parenthesis.
+int parse_expression(const char **p, const char *line, Value *value, size_t *error_offset)
 {
     Value result;
 
@@ -325,9 +343,10 @@ int parse_expression(const char **p, const char *line,
     }
 }
 
-
-int evaluate_line(const char *line, Value *answer,
-                  size_t *error_offset)
+/* Reads one full line as an expression.
+   After getting the result it checks if there are any extra or invalid
+   characters left. */
+int evaluate_line(const char *line, Value *answer, size_t *error_offset)
 {
     const char *p = line;
 
@@ -345,6 +364,7 @@ int evaluate_line(const char *line, Value *answer,
     return 0;
 }
 
+/* Gets the file name without the path and removes the .txt extension. */
 void get_input_base(const char *path, char *base, size_t size)
 {
     const char *name = strrchr(path, '/');
@@ -365,7 +385,7 @@ void get_input_base(const char *path, char *base, size_t size)
     }
 }
 
-
+/* Checks if a line should be ignored because it is empty or a comment. */
 int line_is_ignored(const char *line)
 {
     const char *p = line;
@@ -379,7 +399,8 @@ int line_is_ignored(const char *line)
     return 0;
 }
 
-
+/* Checks if a file name ends with .txt. */
+// Used ChatGPT to debug the .txt extension check.
 int has_txt_extension(const char *name)
 {
     const char *dot = strrchr(name, '.');
@@ -387,7 +408,59 @@ int has_txt_extension(const char *name)
     return dot != NULL && strcmp(dot, ".txt") == 0;
 }
 
+/* Reads one full line from a file.
+   The buffer gets bigger if the line does not fit in the current size. */
+int read_line_dynamic(FILE *file, char **line, size_t *capacity)
+{
+    if (*line == NULL) {
+        *capacity = 128;
+        *line = malloc(*capacity);
 
+        if (*line == NULL) {
+            return -1;
+        }
+    }
+
+    size_t length = 0;
+    int ch;
+
+    while ((ch = fgetc(file)) != EOF) {
+
+        if (length + 1 >= *capacity) {
+            size_t new_capacity = *capacity * 2;
+
+            char *temp = realloc(*line, new_capacity);
+
+            if (temp == NULL) {
+                return -1;
+            }
+
+            *line = temp;
+            *capacity = new_capacity;
+        }
+
+        (*line)[length] = (char)ch;
+        length++;
+
+        if (ch == '\n') {
+            break;
+        }
+    }
+
+    if (length == 0 && ch == EOF) {
+        return 0;
+    }
+
+    (*line)[length] = '\0';
+
+    return 1;
+}
+
+/* Processes one input file.
+   It first goes through the file to see if there is any errors.
+   Then if there is an error it writes that error.
+   Andif there is no error, it reads the file again and writes all the results. */
+// Used ChatGPT to understand moving single-file processing out of main.
 int process_file(const char *input_path, const char *outdir)
 {
     FILE *input = fopen(input_path, "r");
@@ -421,13 +494,15 @@ int process_file(const char *input_path, const char *outdir)
         return 1;
     }
 
-    char line[4096];
+    char *line = NULL;
+    size_t line_capacity = 0;
+    int read_status;
 
     long long file_position = 1;
     long long error_position = 0;
     int has_error = 0;
 
-    while (fgets(line, sizeof(line), input) != NULL) {
+    while ((read_status = read_line_dynamic(input, &line, &line_capacity)) == 1) {
         Value result;
         size_t error_offset;
 
@@ -444,13 +519,21 @@ int process_file(const char *input_path, const char *outdir)
         file_position += (long long)strlen(line);
     }
 
+    if (read_status == -1) {
+    fprintf(stderr, "Memory allocation failed\n");
+    free(line);
+    fclose(input);
+    fclose(output);
+    return 1;
+}
+
     if (has_error) {
         fprintf(output, "ERROR:%lld\n", error_position);
     }
     else {
         rewind(input);
 
-        while (fgets(line, sizeof(line), input) != NULL) {
+        while ((read_status = read_line_dynamic(input, &line, &line_capacity)) == 1) {
             Value result;
             size_t error_offset;
 
@@ -466,15 +549,25 @@ int process_file(const char *input_path, const char *outdir)
                 fprintf(output, "%lld\n", result.integer);
             }
         }
-    }
 
+        if (read_status == -1) {
+        fprintf(stderr, "Memory allocation failed\n");
+        free(line);
+        fclose(input);
+        fclose(output);
+        return 1;
+        }
+    }
+    free(line);
     fclose(input);
     fclose(output);
 
     return 0;
 }
 
-
+/* Goes through a directory and looks for .txt files.
+   It checks if they are normal files and then processes them one by one. */
+// Used ChatGPT to debug the directory path joining and .txt file processing.
 int scan_directory(const char *dirpath, const char *outdir)
 {
     DIR *dir = opendir(dirpath);
@@ -483,6 +576,8 @@ int scan_directory(const char *dirpath, const char *outdir)
         perror(dirpath);
         return 1;
     }
+
+    mkdir(outdir, 0777);
 
     struct dirent *entry;
     char path[1024];
@@ -519,6 +614,7 @@ int scan_directory(const char *dirpath, const char *outdir)
     return 0;
 }
 
+/* Gets the folder name from a full directory path. */
 void get_folder_base(const char *path, char *base, size_t size)
 {
     size_t len = strlen(path);
@@ -543,6 +639,10 @@ void get_folder_base(const char *path, char *base, size_t size)
     base[name_len] = '\0';
 }
 
+/* Reads the command line arguments.
+   It checks which file or folder should be used, finds the output folder,
+   and then starts either single-file or directory processing. */
+// Used ChatGPT to debug argument checks for directory mode.
 int main(int argc, char *argv[])
 {
     const char *dirpath = NULL;
